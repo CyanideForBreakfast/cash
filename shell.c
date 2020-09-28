@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BUFFER_SIZE 2
+#define BUFFER_SIZE 20
 
 void run_shell();
 char* read_command();
