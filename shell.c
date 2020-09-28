@@ -74,7 +74,8 @@ void handle_sigquit(){
 }
 
 void handle_sigint(){
-	for(int i=0;i<commands_stored-1;i++){
+	printf("\n");
+	for(int i=0;i<commands_stored;i++){
 		printf("%s\n",last_ten_commands[i]);
 	}
 	raise(SIGKILL);
@@ -89,7 +90,8 @@ void handle_sigint(){
 char* read_command(){
 	char* user_command = (char*)malloc(BUFFER_SIZE*sizeof(char));
 	int command_size = BUFFER_SIZE-1, index=0, reallocated = 1;
-	char c=getchar();
+	char c='\0';
+	c=getchar();
 	while(c!=EOF && c!='\n'){
 		if(0<command_size--){
 			user_command[index++]=c;
@@ -109,7 +111,7 @@ char* read_command(){
 
 // add commands to last ten commands
 void add_command(char* command){
-	if(commands_stored<9){
+	if(commands_stored<10){
 		last_ten_commands[commands_stored] = command;
 		commands_stored++;
 	}
