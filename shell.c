@@ -1,13 +1,21 @@
 #include <stdio.h>
+#include <stdlib.h>
+
+#define BUFFER_SIZE 10
+
+void run_shell();
+char* read_command();
+void parse_and_execute();
 
 int main(){
+	printf("\n");
 	run_shell();
 	return 0;
 }
 void run_shell(){
 	char* user_command;
 	while(1){
-		printf("\n$$$ ");
+		printf("$$$ ");
 		/* read till \n or EOF encountered
 		 * store and return pointer to location
 		 * */
@@ -36,7 +44,22 @@ void run_shell(){
  * reallocate if exceed buffer 
 */
 char* read_command(){
-	
+	char* user_command = (char*)malloc(BUFFER_SIZE*sizeof(char));
+	int command_size = BUFFER_SIZE, index=0, reallocated = 1;
+	char c = getchar();
+	while(c!=EOF && c!='\n'){
+		if(0<command_size--){
+			c=getchar();
+			user_command[index++]=c;
+		}
+		else{
+			user_command = (char*)realloc(user_command, BUFFER_SIZE*sizeof(char)*(++reallocated));
+			command_size=BUFFER_SIZE;
+			c=getchar();
+			user_command[index++]=c;
+		}
+	}
+	return user_command;
 }
 
 /*
