@@ -24,10 +24,25 @@ void run_shell(){
 	}
 }
 
+/*
+ * signal handling
+ * handle SIGINT
+ * handle SIGQUIT
+ * */
+
+/*
+ * read till EOF or \n
+ * allocate buffer space for storing command
+ * reallocate if exceed buffer 
+*/
 char* read_command(){
 	
 }
 
+/*
+ * parse single line command into possibly multiple line bash equivalents
+ * execute each one
+*/
 void parse_and_execute(char* user_command){
 	
 }
