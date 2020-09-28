@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define BUFFER_SIZE 10
+#define BUFFER_SIZE 2
 
 void run_shell();
 char* read_command();
@@ -45,20 +45,21 @@ void run_shell(){
 */
 char* read_command(){
 	char* user_command = (char*)malloc(BUFFER_SIZE*sizeof(char));
-	int command_size = BUFFER_SIZE, index=0, reallocated = 1;
-	char c = getchar();
+	int command_size = BUFFER_SIZE-1, index=0, reallocated = 1;
+	char c=getchar();
 	while(c!=EOF && c!='\n'){
 		if(0<command_size--){
-			c=getchar();
 			user_command[index++]=c;
+			c=getchar();
 		}
 		else{
 			user_command = (char*)realloc(user_command, BUFFER_SIZE*sizeof(char)*(++reallocated));
-			command_size=BUFFER_SIZE;
-			c=getchar();
+			command_size=BUFFER_SIZE-1;
 			user_command[index++]=c;
+			c=getchar();
 		}
 	}
+	user_command[index++] = '\0';
 	return user_command;
 }
 
