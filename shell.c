@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define BUFFER_SIZE 20
 
@@ -150,5 +153,5 @@ void add_command(char *command)
 */
 void parse_and_execute(char *user_command)
 {
-	
+
 }
