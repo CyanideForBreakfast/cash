@@ -6,9 +6,11 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define BUFFER_SIZE 20
+#define BUFFER_SIZE 100
+#define PIPE_SIZE 1000000
 
-int commands_stored = 0;
+FILE *file = NULL;
+int commands_stored = 0, file_mode = -1;
 char **last_ten_commands;
 
 void run_shell();
@@ -41,6 +43,46 @@ void run_shell()
 		 * store and return pointer to location
 		 * */
 		user_command = read_command();
+
+		/*set file pointer to handle redirection*/
+		char *itr = user_command, redir, *temp = &redir;
+		while (*itr != '\0')
+		{
+			if (*itr == '<' || *itr == '>')
+			{
+				redir = *itr;
+				temp = itr;
+				*itr++ = '\0';
+				while (*itr == ' ')
+				{
+					itr++;
+				}
+
+				switch (redir)
+				{
+				case '<':
+					file_mode = 0;
+					printf("file opened for reading:\t%s\n", itr);
+					file = fopen(itr, "r");
+					stdin = file;
+					break;
+
+				case '>':
+					file_mode = 1;
+					printf("file opened for writing:\t%s\n", itr);
+					file = fopen(itr, "w");
+					stdout = file;
+					break;
+
+				default:
+					break;
+				}
+				printf("Main command:\t%s", user_command);
+				break;
+			}
+			itr++;
+		}
+
 		/*
 		 * parse user_command 
 		 * check for new operators - || and |||
@@ -49,6 +91,7 @@ void run_shell()
 		 * 
 		 */
 		parse_and_execute(user_command);
+		*temp = redir;
 	}
 }
 
@@ -123,7 +166,8 @@ char *read_command()
 		}
 	}
 	user_command[index++] = '\0';
-	if (strlen(user_command)) add_command(user_command);
+	if (strlen(user_command))
+		add_command(user_command);
 	return user_command;
 }
 
@@ -179,7 +223,7 @@ void parse_and_execute(char *user_command)
 		for (int p = 0; p < num_pipes; p++)
 		{
 			// remove leading white-spaces
-			while (*itr == ' ') 
+			while (*itr == ' ')
 				itr++;
 
 			int k = 0;
@@ -202,4 +246,135 @@ void parse_and_execute(char *user_command)
 		}
 		num_commands++;
 	}
+
+	// for (size_t i = 0; i < num_commands; i++)
+	// {
+	// 	for (size_t j = 0; j < 3; j++)
+	// 	{
+	// 		printf("%ld %ld\t%s\t\t", i, j, commands[i][j]);
+	// 	}
+	// 	printf("\n");
+	// }
+
+	size_t bytes_to_read = 0;
+	char *input = (char *)malloc(sizeof(char) * PIPE_SIZE), *output = NULL;
+	if (file_mode == 0)
+		fscanf(file, "%s", input);
+
+	int from_child[2];
+	int to_child[2];
+	for (int i = 0; i < num_commands; i++)
+	{ 
+		if (output != NULL)
+			strcpy(input, output);
+
+		//Argument extraction
+		for (int j = 0; j < 3; j++)
+		{
+			if (strcmp(commands[i][j], "") == 0)
+				break;
+
+			char curr_command[BUFFER_SIZE], *arg_extractor;
+			strcpy(curr_command, commands[i][j]);
+
+			int k = 0;
+			char **argv;
+			arg_extractor = strtok(curr_command, " ");
+			while (arg_extractor != NULL)
+			{
+				argv = (char **)realloc(argv, sizeof(char *) * (k + 1));
+				argv[k] = (char *)malloc(sizeof(char) * BUFFER_SIZE);
+
+				stpcpy(argv[k], arg_extractor);
+				arg_extractor = strtok(NULL, " ");
+				k++;
+				printf("Argument:\t%s\t%d\n", argv[k - 1], k);
+			}
+			argv = (char **)realloc(argv, sizeof(char *) * (k + 1));
+			argv[k] = NULL;
+
+			// Pipes established for child process to communicate
+			pipe(from_child);
+			pipe(to_child);
+
+			free(output);
+			output = (char *)malloc(sizeof(char) * PIPE_SIZE);
+
+			write(to_child[1], input, bytes_to_read);
+			pid_t p = fork();
+			switch (p)
+			{
+			case -1:
+				perror("fork\n");
+				exit(1);
+				break;
+
+			case 0:
+				dup2(from_child[1], STDOUT_FILENO); //stdout to string to parent process
+				dup2(to_child[0], STDIN_FILENO);		//stdin of string from parent process
+				close(from_child[0]);
+				close(from_child[1]);
+				close(to_child[0]);
+				close(to_child[1]);
+				fputs(input, stdin);
+
+				char path_to_executable[50] = {'\0'};
+				strcat(path_to_executable, "/bin/");
+				strcat(path_to_executable, argv[0]);
+				execvp(argv[0], argv);
+				perror("execv failed\n");
+				exit(1);
+				break;
+
+			default:
+				close(to_child[0]);
+				close(from_child[1]);
+				printf("Process id:\t%d\n", p);
+
+				wait(NULL);
+				bytes_to_read = read(from_child[0], output, PIPE_SIZE);
+				printf("\n%ld bytes of output:\n%s\n", bytes_to_read, output);
+				break;
+			}
+
+			for (int index = 0; index < k; index++)
+			{
+				free(argv[index]);
+			}
+			free(argv);
+
+			if (i == num_commands)
+			{
+				switch (file_mode)
+				{
+				case -1:
+					printf("\n%s\n", output);
+					break;
+
+				case 1:
+					fprintf(file, "%s", output);
+					break;
+
+				default:
+					break;
+				}
+			}
+		}
+	}
+
+	free(input);
+	free(output);
+	if (file != NULL)
+	{
+		fclose(file);
+		file = NULL;
+	}
+	file_mode = -1;
+	printf("file mode:\t%d\n", file_mode);
+	printf("command execution ended\n\n");
 }
+
+// void print_details(pid_t p, int fd[])
+// {
+// 	printf("Process id: %d\tPipe fds: %d %d\n", p, fd[0], fd[1]);
+// }
