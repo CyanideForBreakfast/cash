@@ -153,5 +153,53 @@ void add_command(char *command)
 */
 void parse_and_execute(char *user_command)
 {
+	char commands[10][3][BUFFER_SIZE];
+	for (size_t i = 0; i < 10; i++)
+	{
+		for (size_t j = 0; j < 3; j++)
+		{
+			memset(commands[i][j], '\0', BUFFER_SIZE);
+		}
+	}
 
+	int num_commands = 0;
+	char ch, *itr = user_command;
+	do
+	{
+		int num_pipes = 0;
+		if (num_commands != 0)
+			while (*itr == '|')
+			{
+				num_pipes++;
+				itr++;
+			}
+		else
+			num_pipes = 1;
+
+		for (int p = 0; p < num_pipes; p++)
+		{
+			// remove leading white-spaces
+			while (*itr == ' ') 
+				itr++;
+
+			int k = 0;
+			while (*itr != '|' && *itr != '\0' && *itr != '\n')
+			{
+				if (*itr == ',')
+				{
+					k++;
+					itr++;
+					break;
+				}
+				commands[num_commands][p][k++] = *itr++;
+			}
+
+			// remove trailing white-spaces
+			while (commands[num_commands][p][--k] == ' ')
+			{
+				commands[num_commands][p][k] = '\0';
+			}
+		}
+		num_commands++;
+	} while (*itr != '\0' && *itr != '\n');
 }
