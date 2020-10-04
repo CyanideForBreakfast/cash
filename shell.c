@@ -259,15 +259,18 @@ void parse_and_execute(char *user_command)
 	size_t bytes_to_read = 0;
 	char *input = (char *)malloc(sizeof(char) * PIPE_SIZE), *output = NULL;
 	if (file_mode == 0)
+	{
 		fscanf(file, "%s", input);
-
-	int from_child[2];
-	int to_child[2];
+	}
 	for (int i = 0; i < num_commands; i++)
-	{ 
+	{
+		FILE *fptr = fopen("t", "w+");
 		if (output != NULL)
+		{
 			strcpy(input, output);
-
+			fprintf(fptr, "%s", output);
+		}
+		fclose(fptr);
 		//Argument extraction
 		for (int j = 0; j < 3; j++)
 		{
@@ -288,12 +291,18 @@ void parse_and_execute(char *user_command)
 				stpcpy(argv[k], arg_extractor);
 				arg_extractor = strtok(NULL, " ");
 				k++;
-				printf("Argument:\t%s\t%d\n", argv[k - 1], k);
 			}
-			argv = (char **)realloc(argv, sizeof(char *) * (k + 1));
+			argv = (char **)realloc(argv, sizeof(char *) * (k + 2));
+			if (i != 0)
+			{
+				argv[k++] = "t";
+			}
 			argv[k] = NULL;
 
+
 			// Pipes established for child process to communicate
+			int from_child[2];
+			int to_child[2];
 			pipe(from_child);
 			pipe(to_child);
 
@@ -316,8 +325,9 @@ void parse_and_execute(char *user_command)
 				close(from_child[1]);
 				close(to_child[0]);
 				close(to_child[1]);
-				fputs(input, stdin);
-
+				// fputs(input, stdin);
+				// fscanf(stdin, "%s", input);
+				// printf("%s\n", input);
 				char path_to_executable[50] = {'\0'};
 				strcat(path_to_executable, "/bin/");
 				strcat(path_to_executable, argv[0]);
@@ -331,24 +341,25 @@ void parse_and_execute(char *user_command)
 				close(from_child[1]);
 				printf("Process id:\t%d\n", p);
 
-				wait(NULL);
 				bytes_to_read = read(from_child[0], output, PIPE_SIZE);
-				printf("\n%ld bytes of output:\n%s\n", bytes_to_read, output);
+				printf("%s\n", output);
 				break;
 			}
 
-			for (int index = 0; index < k; index++)
+			for (int index = 0; index < k - 1; index++)
 			{
 				free(argv[index]);
 			}
 			free(argv);
 
+			fflush(stdout);
 			if (i == num_commands)
 			{
 				switch (file_mode)
 				{
 				case -1:
 					printf("\n%s\n", output);
+					fflush(stdout);
 					break;
 
 				case 1:
@@ -360,6 +371,7 @@ void parse_and_execute(char *user_command)
 				}
 			}
 		}
+		fclose(fptr);
 	}
 
 	free(input);
@@ -370,7 +382,6 @@ void parse_and_execute(char *user_command)
 		file = NULL;
 	}
 	file_mode = -1;
-	printf("file mode:\t%d\n", file_mode);
 	printf("command execution ended\n\n");
 }
 
