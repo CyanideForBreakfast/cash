@@ -123,7 +123,7 @@ char *read_command()
 		}
 	}
 	user_command[index++] = '\0';
-	add_command(user_command);
+	if (strlen(user_command)) add_command(user_command);
 	return user_command;
 }
 
@@ -164,7 +164,7 @@ void parse_and_execute(char *user_command)
 
 	int num_commands = 0;
 	char ch, *itr = user_command;
-	do
+	while (*itr != '\0' && *itr != '\n')
 	{
 		int num_pipes = 0;
 		if (num_commands != 0)
@@ -201,5 +201,5 @@ void parse_and_execute(char *user_command)
 			}
 		}
 		num_commands++;
-	} while (*itr != '\0' && *itr != '\n');
+	}
 }
