@@ -8,9 +8,11 @@
 
 #define BUFFER_SIZE 100
 #define PIPE_SIZE 1000000
+#define PIPE_READ 0
+#define PIPE_WRITE 1
 
-FILE *file = NULL;
-int commands_stored = 0, file_mode = -1;
+FILE *file;
+int commands_stored = 0, file_mode = 1; // file_mode = {0: read from file, 1: write to file}
 char **last_ten_commands;
 
 void run_shell();
@@ -20,6 +22,9 @@ void handle_sigquit();
 char *read_command();
 void add_command(char *);
 void parse_and_execute();
+int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command);
+char **argument_extractor(char *command);
+FILE *file_redirector(char *user_command);
 
 int main()
 {
@@ -43,45 +48,46 @@ void run_shell()
 		 * store and return pointer to location
 		 * */
 		user_command = read_command();
+		file = file_redirector(user_command);
 
 		/*set file pointer to handle redirection*/
-		char *itr = user_command, redir, *temp = &redir;
-		while (*itr != '\0')
-		{
-			if (*itr == '<' || *itr == '>')
-			{
-				redir = *itr;
-				temp = itr;
-				*itr++ = '\0';
-				while (*itr == ' ')
-				{
-					itr++;
-				}
+		// char *itr = user_command, redir, *temp = &redir;
+		// while (*itr != '\0')
+		// {
+		// 	if (*itr == '<' || *itr == '>')
+		// 	{
+		// 		redir = *itr;
+		// 		temp = itr;
+		// 		*itr++ = '\0';
+		// 		while (*itr == ' ')
+		// 		{
+		// 			itr++;
+		// 		}
 
-				switch (redir)
-				{
-				case '<':
-					file_mode = 0;
-					printf("file opened for reading:\t%s\n", itr);
-					file = fopen(itr, "r");
-					stdin = file;
-					break;
+		// 		switch (redir)
+		// 		{
+		// 		case '<':
+		// 			file_mode = 0;
+		// 			printf("file opened for reading:\t%s\n", itr);
+		// 			file = fopen(itr, "r");
+		// 			stdin = file;
+		// 			break;
 
-				case '>':
-					file_mode = 1;
-					printf("file opened for writing:\t%s\n", itr);
-					file = fopen(itr, "w");
-					stdout = file;
-					break;
+		// 		case '>':
+		// 			file_mode = 1;
+		// 			printf("file opened for writing:\t%s\n", itr);
+		// 			file = fopen(itr, "w");
+		// 			stdout = file;
+		// 			break;
 
-				default:
-					break;
-				}
-				printf("Main command:\t%s", user_command);
-				break;
-			}
-			itr++;
-		}
+		// 		default:
+		// 			break;
+		// 		}
+		// 		printf("Main command:\t%s", user_command);
+		// 		break;
+		// 	}
+		// 	itr++;
+		// }
 
 		/*
 		 * parse user_command 
@@ -91,7 +97,6 @@ void run_shell()
 		 * 
 		 */
 		parse_and_execute(user_command);
-		*temp = redir;
 	}
 }
 
@@ -149,7 +154,11 @@ char *read_command()
 	char *user_command = (char *)malloc(BUFFER_SIZE * sizeof(char));
 	int command_size = BUFFER_SIZE - 1, index = 0, reallocated = 1;
 	char c = '\0';
-	c = getchar();
+	do
+	{
+		c = getchar();
+	} while (c == ' ');
+
 	while (c != EOF && c != '\n')
 	{
 		if (0 < command_size--)
@@ -166,8 +175,9 @@ char *read_command()
 		}
 	}
 	user_command[index++] = '\0';
-	if (strlen(user_command))
+	if (strlen(user_command) > 0)	//	Add a non-null command to history
 		add_command(user_command);
+
 	return user_command;
 }
 
@@ -206,8 +216,102 @@ void parse_and_execute(char *user_command)
 		}
 	}
 
+	int num_commands = command_extractor(commands, user_command);
+
+	char *input = (char *)calloc(PIPE_SIZE, sizeof(char));
+	char *output = (char *)calloc(PIPE_SIZE, sizeof(char));
+
+	size_t bytes_to_read = 0;
+	for (int i = 0; i < num_commands; i++)
+	{
+		//	Pipes established to and from child
+		int from_child[2];
+		int to_child[2];
+		pipe(from_child);
+		pipe(to_child);
+		strcpy(input, output);
+
+		for (int j = 0; j < 3 && strlen(commands[i][j]) != 0; j++)
+		{
+			char curr_command[BUFFER_SIZE];
+			strcpy(curr_command, commands[i][j]);
+
+			//	Argument vector for execv call
+			char **argv = argument_extractor(curr_command);
+			for (size_t i = 0; argv[i] != NULL; i++)
+			{
+				printf("argument\t%ld\t%s\n", i, argv[i]);
+			}
+
+			pid_t p = fork();
+			switch (p)
+			{
+			case -1:
+				perror("fork\n");
+				exit(1);
+				break;
+
+			case 0:
+				dup2(from_child[PIPE_WRITE], STDOUT_FILENO); //stdout to string to parent process
+				dup2(to_child[PIPE_READ], STDIN_FILENO);		//stdin of string from parent process
+				close(from_child[PIPE_READ]);
+				close(from_child[PIPE_WRITE]);
+				close(to_child[PIPE_READ]);
+				close(to_child[PIPE_WRITE]);
+
+				// sleep(2);
+				// char str[PIPE_SIZE];
+				// printf("child\n");
+				// read(to_child[PIPE_READ], str, 1000000);
+				// scanf("%s", str);
+				// printf("%s\n", str);
+				// wait(NULL);
+				// int a = 0;
+				// char ch;
+				// while ((ch = getchar()) != '\0')
+					// str[a++] = ch;
+				
+				// perror(str);
+
+				// printf("reached\t%lu\n", strlen(str));
+
+				wait(NULL);
+				execvp(argv[0], argv);
+				perror("execv failed\n");
+				exit(1);
+				break;
+
+			default:
+				close(to_child[PIPE_READ]);
+				close(from_child[PIPE_WRITE]);
+				printf("\nProcess id:\t%d\n", p);
+				write(to_child[PIPE_WRITE], input, strlen(input) + 1);
+				// getchar();
+				wait(NULL);
+				// printf("\nall sent\n");
+				bytes_to_read = read(from_child[PIPE_READ], output, PIPE_SIZE);
+				wait(NULL);
+				break;
+			}
+
+			// Deallocate the argument vector
+			for (int index = 0; argv[index] != NULL; index++)
+			{
+				free(argv[index]);
+			}
+			free(argv);
+		}
+	}
+
+	printf("%s\n", output);
+	printf("command execution ended\n\n");
+}
+
+int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command)
+{
 	int num_commands = 0;
 	char ch, *itr = user_command;
+
 	while (*itr != '\0' && *itr != '\n')
 	{
 		int num_pipes = 0;
@@ -222,170 +326,91 @@ void parse_and_execute(char *user_command)
 
 		for (int p = 0; p < num_pipes; p++)
 		{
-			// remove leading white-spaces
+			// ignore leading white-spaces before each command
 			while (*itr == ' ')
 				itr++;
 
-			int k = 0;
+			int ch_index = 0;
 			while (*itr != '|' && *itr != '\0' && *itr != '\n')
 			{
 				if (*itr == ',')
 				{
-					k++;
+					ch_index++;
 					itr++;
 					break;
 				}
-				commands[num_commands][p][k++] = *itr++;
+				commands[num_commands][p][ch_index++] = *itr++;
 			}
 
-			// remove trailing white-spaces
-			while (commands[num_commands][p][--k] == ' ')
+			// ignore trailing white-spaces
+			while (commands[num_commands][p][ch_index] == ' ')
 			{
-				commands[num_commands][p][k] = '\0';
+				commands[num_commands][p][ch_index--] = '\0';
 			}
 		}
 		num_commands++;
 	}
 
-	// for (size_t i = 0; i < num_commands; i++)
-	// {
-	// 	for (size_t j = 0; j < 3; j++)
-	// 	{
-	// 		printf("%ld %ld\t%s\t\t", i, j, commands[i][j]);
-	// 	}
-	// 	printf("\n");
-	// }
+	return num_commands;
+}
 
-	size_t bytes_to_read = 0;
-	char *input = (char *)malloc(sizeof(char) * PIPE_SIZE), *output = NULL;
-	if (file_mode == 0)
+char **argument_extractor(char *command)
+{
+	int k = 0;
+	char *arg_token = strtok(command, " ");
+	char **argv = NULL;
+	while (arg_token != NULL)
 	{
-		fscanf(file, "%s", input);
+		argv = (char **)realloc(argv, (k + 1) * sizeof(char *));
+		argv[k] = (char *)malloc(BUFFER_SIZE * sizeof(char));
+
+		strcpy(argv[k], arg_token);
+		arg_token = strtok(NULL, " ");
+		k++;
 	}
-	for (int i = 0; i < num_commands; i++)
+	argv = (char **)realloc(argv, (k + 1) * sizeof(char *));
+	argv[k] = NULL;
+
+	return argv;
+}
+
+FILE *file_redirector(char *user_command)
+{
+	char *itr = user_command, redirect_sign, *temp;
+	while (*itr != '\0')
 	{
-		FILE *fptr = fopen("t", "w+");
-		if (output != NULL)
+		if (*itr == '<' || *itr == '>')
 		{
-			strcpy(input, output);
-			fprintf(fptr, "%s", output);
-		}
-		fclose(fptr);
-		//Argument extraction
-		for (int j = 0; j < 3; j++)
-		{
-			if (strcmp(commands[i][j], "") == 0)
+			redirect_sign = *itr;
+			temp = itr;
+			*itr++ = '\0';
+			while (*itr == ' ')
+				itr++;
+
+			switch (redirect_sign)
+			{
+			case '<':
+				file_mode = 0;
+				printf("file opened for reading:\t%s\n", itr);
+				file = fopen(itr, "r");
 				break;
 
-			char curr_command[BUFFER_SIZE], *arg_extractor;
-			strcpy(curr_command, commands[i][j]);
-
-			int k = 0;
-			char **argv;
-			arg_extractor = strtok(curr_command, " ");
-			while (arg_extractor != NULL)
-			{
-				argv = (char **)realloc(argv, sizeof(char *) * (k + 1));
-				argv[k] = (char *)malloc(sizeof(char) * BUFFER_SIZE);
-
-				stpcpy(argv[k], arg_extractor);
-				arg_extractor = strtok(NULL, " ");
-				k++;
-			}
-			argv = (char **)realloc(argv, sizeof(char *) * (k + 2));
-			if (i != 0)
-			{
-				argv[k++] = "t";
-			}
-			argv[k] = NULL;
-
-
-			// Pipes established for child process to communicate
-			int from_child[2];
-			int to_child[2];
-			pipe(from_child);
-			pipe(to_child);
-
-			free(output);
-			output = (char *)malloc(sizeof(char) * PIPE_SIZE);
-
-			write(to_child[1], input, bytes_to_read);
-			pid_t p = fork();
-			switch (p)
-			{
-			case -1:
-				perror("fork\n");
-				exit(1);
-				break;
-
-			case 0:
-				dup2(from_child[1], STDOUT_FILENO); //stdout to string to parent process
-				dup2(to_child[0], STDIN_FILENO);		//stdin of string from parent process
-				close(from_child[0]);
-				close(from_child[1]);
-				close(to_child[0]);
-				close(to_child[1]);
-				// fputs(input, stdin);
-				// fscanf(stdin, "%s", input);
-				// printf("%s\n", input);
-				char path_to_executable[50] = {'\0'};
-				strcat(path_to_executable, "/bin/");
-				strcat(path_to_executable, argv[0]);
-				execvp(argv[0], argv);
-				perror("execv failed\n");
-				exit(1);
+			case '>':
+				file_mode = 1;
+				printf("file opened for writing:\t%s\n", itr);
+				file = fopen(itr, "w+");
+				*temp = redirect_sign;
+				return file;
 				break;
 
 			default:
-				close(to_child[0]);
-				close(from_child[1]);
-				printf("Process id:\t%d\n", p);
-
-				bytes_to_read = read(from_child[0], output, PIPE_SIZE);
-				printf("%s\n", output);
 				break;
 			}
-
-			for (int index = 0; index < k - 1; index++)
-			{
-				free(argv[index]);
-			}
-			free(argv);
-
-			fflush(stdout);
-			if (i == num_commands)
-			{
-				switch (file_mode)
-				{
-				case -1:
-					printf("\n%s\n", output);
-					fflush(stdout);
-					break;
-
-				case 1:
-					fprintf(file, "%s", output);
-					break;
-
-				default:
-					break;
-				}
-			}
+			printf("Main command:\t%s", user_command);
+			break;
 		}
-		fclose(fptr);
+		itr++;
 	}
 
-	free(input);
-	free(output);
-	if (file != NULL)
-	{
-		fclose(file);
-		file = NULL;
-	}
-	file_mode = -1;
-	printf("command execution ended\n\n");
+	return stdout;
 }
-
-// void print_details(pid_t p, int fd[])
-// {
-// 	printf("Process id: %d\tPipe fds: %d %d\n", p, fd[0], fd[1]);
-// }
