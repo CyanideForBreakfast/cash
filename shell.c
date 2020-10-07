@@ -221,7 +221,6 @@ void parse_and_execute(char *user_command)
 	char *input = (char *)calloc(PIPE_SIZE, sizeof(char));
 	char *output = (char *)calloc(PIPE_SIZE, sizeof(char));
 
-	size_t bytes_to_read = 0;
 	for (int i = 0; i < num_commands; i++)
 	{
 		//	Pipes established to and from child
@@ -238,12 +237,13 @@ void parse_and_execute(char *user_command)
 
 			//	Argument vector for execv call
 			char **argv = argument_extractor(curr_command);
-			for (size_t i = 0; argv[i] != NULL; i++)
-			{
-				printf("argument\t%ld\t%s\n", i, argv[i]);
-			}
+			// for (size_t k = 0; argv[k] != NULL; k++)
+			// {
+				// printf("argument\t%ld\t%s\n", k, argv[k]);
+			// }
 
 			pid_t p = fork();
+			int status;
 			switch (p)
 			{
 			case -1:
@@ -252,12 +252,12 @@ void parse_and_execute(char *user_command)
 				break;
 
 			case 0:
+				close(to_child[PIPE_WRITE]);
+				close(from_child[PIPE_READ]);
 				dup2(from_child[PIPE_WRITE], STDOUT_FILENO); //stdout to string to parent process
 				dup2(to_child[PIPE_READ], STDIN_FILENO);		//stdin of string from parent process
-				close(from_child[PIPE_READ]);
 				close(from_child[PIPE_WRITE]);
 				close(to_child[PIPE_READ]);
-				close(to_child[PIPE_WRITE]);
 
 				// sleep(2);
 				// char str[PIPE_SIZE];
@@ -272,7 +272,6 @@ void parse_and_execute(char *user_command)
 					// str[a++] = ch;
 				
 				// perror(str);
-
 				// printf("reached\t%lu\n", strlen(str));
 
 				wait(NULL);
@@ -284,13 +283,14 @@ void parse_and_execute(char *user_command)
 			default:
 				close(to_child[PIPE_READ]);
 				close(from_child[PIPE_WRITE]);
-				printf("\nProcess id:\t%d\n", p);
+				printf("\nProcess id:\t%d\t%s\n", p, argv[0]);
+				
 				write(to_child[PIPE_WRITE], input, strlen(input) + 1);
+				close(to_child[PIPE_WRITE]);
+				printf("written to pipe:-----\n%s\n------\n", input);
 				// getchar();
-				wait(NULL);
-				// printf("\nall sent\n");
-				bytes_to_read = read(from_child[PIPE_READ], output, PIPE_SIZE);
-				wait(NULL);
+				wait(&status);
+				read(from_child[PIPE_READ], output, PIPE_SIZE);
 				break;
 			}
 
