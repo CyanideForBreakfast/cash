@@ -48,46 +48,9 @@ void run_shell()
 		 * store and return pointer to location
 		 * */
 		user_command = read_command();
+		
+		// Set file pointer to handle redirection
 		file = file_redirector(user_command);
-
-		/*set file pointer to handle redirection*/
-		// char *itr = user_command, redir, *temp = &redir;
-		// while (*itr != '\0')
-		// {
-		// 	if (*itr == '<' || *itr == '>')
-		// 	{
-		// 		redir = *itr;
-		// 		temp = itr;
-		// 		*itr++ = '\0';
-		// 		while (*itr == ' ')
-		// 		{
-		// 			itr++;
-		// 		}
-
-		// 		switch (redir)
-		// 		{
-		// 		case '<':
-		// 			file_mode = 0;
-		// 			printf("file opened for reading:\t%s\n", itr);
-		// 			file = fopen(itr, "r");
-		// 			stdin = file;
-		// 			break;
-
-		// 		case '>':
-		// 			file_mode = 1;
-		// 			printf("file opened for writing:\t%s\n", itr);
-		// 			file = fopen(itr, "w");
-		// 			stdout = file;
-		// 			break;
-
-		// 		default:
-		// 			break;
-		// 		}
-		// 		printf("Main command:\t%s", user_command);
-		// 		break;
-		// 	}
-		// 	itr++;
-		// }
 
 		/*
 		 * parse user_command 
