@@ -45,37 +45,11 @@ int main()
 	return 0;
 }
 
-void run_shell()
-{
-	char *user_command;
-	while (1)
-	{
-		printf("$$$ ");
-		/* read till \n or EOF encountered
-		 * store and return pointer to location
-		 * */
-		user_command = read_command();
-
-		// Set file pointer to handle redirection
-		redir_file rfiles = file_redirector(user_command);
-
-		/*
-		 * parse user_command 
-		 * check for new operators - || and |||
-		 * convert to corresponding list of bash commands
-		 * execute all
-		 * 
-		 */
-		parse_and_execute(user_command, rfiles);
-	}
-}
-
 /*
  * signal handling
  * handle SIGINT
  * handle SIGQUIT
  * */
-
 void handle_signal(int signum)
 {
 	if (signum == 3)
@@ -113,6 +87,31 @@ void handle_sigint()
 	raise(SIGKILL);
 }
 
+void run_shell()
+{
+	char *user_command;
+	while (1)
+	{
+		printf("$$$ ");
+		/* read till \n or EOF encountered
+		 * store and return pointer to location
+		 * */
+		user_command = read_command();
+
+		// Set file pointer to handle redirection
+		redir_file rfile = file_redirector(user_command);
+
+		/*
+		 * parse user_command 
+		 * check for new operators - || and |||
+		 * convert to corresponding list of bash commands
+		 * execute all
+		 * 
+		 */
+		parse_and_execute(user_command, rfile);
+		fclose(rfile.file_stream);
+	}
+}
 /*
  * read till EOF or \n
  * allocate buffer space for storing command
@@ -172,7 +171,8 @@ void add_command(char *command)
 }
 
 /*
- * parse single line command into possibly multiple line bash equivalents
+ * parse single line command into possibly
+ * multiple line bash equivalents
  * execute each one
 */
 void parse_and_execute(char *user_command, redir_file rfile)
@@ -240,7 +240,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 			default:
 				close(to_child[PIPE_READ]);
 				close(from_child[PIPE_WRITE]);
-				printf("\nProcess id:\t%d\n", p);
+				printf("Process id:\t%d\n", p);
 
 				write(to_child[PIPE_WRITE], input, strlen(input));
 				close(to_child[PIPE_WRITE]);
@@ -253,8 +253,16 @@ void parse_and_execute(char *user_command, redir_file rfile)
 
 			if (i == (num_commands - 1))
 			{
-				printf("%s\n", output);
+				if (rfile.file_mode == FILE_READ)
+				{
+					printf("%s\n", output);
+				}
+				else
+				{
+					fwrite(output, 1, strlen(output), rfile.file_stream);
+				}
 			}
+
 			// Deallocate the argument vector
 			for (int index = 0; argv[index] != NULL; index++)
 			{
@@ -264,7 +272,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 		}
 	}
 
-	printf("command execution ended\n\n");
+	printf("command execution ended\n");
 }
 
 int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command)
@@ -334,11 +342,16 @@ char **argument_extractor(char *command)
 	return argv;
 }
 
+/* 
+ * Extract the file name from user_command
+ * and determine read or write mode for
+ * the file
+ */
 redir_file file_redirector(char *user_command)
 {
 	redir_file rfile;
 	rfile.file_mode = 0;
-	rfile.file_stream = stdout;
+	rfile.file_stream = NULL;
 
 	char *itr = user_command, redirect_sign, *temp;
 	while (*itr != '\0')
@@ -376,38 +389,6 @@ redir_file file_redirector(char *user_command)
 		}
 		itr++;
 	}
-	// 	if (*itr == '<' || *itr == '>')
-	// 	{
-	// 		redirect_sign = *itr;
-	// 		temp = itr;
-	// 		*itr++ = '\0';
-	// 		while (*itr == ' ')
-	// 			itr++;
-
-	// 		switch (redirect_sign)
-	// 		{
-	// 		case '<':
-	// 			// file_mode = 0;
-	// 			printf("file opened for reading:\t%s\n", itr);
-	// 			// file = fopen(itr, "r");
-	// 			break;
-
-	// 		case '>':
-	// 			// file_mode = 1;
-	// 			printf("file opened for writing:\t%s\n", itr);
-	// 			// file = fopen(itr, "w+");
-	// 			*temp = redirect_sign;
-	// 			// return file;
-	// 			break;
-
-	// 		default:
-	// 			break;
-	// 		}
-	// 		printf("Main command:\t%s", user_command);
-	// 		break;
-	// 	}
-	// 	itr++;
-	// }
 
 	return rfile;
 }
