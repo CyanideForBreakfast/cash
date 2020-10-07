@@ -10,21 +10,28 @@
 #define PIPE_SIZE 1000000
 #define PIPE_READ 0
 #define PIPE_WRITE 1
+#define FILE_WRITE 0
+#define FILE_APPEND 1
+#define FILE_READ -1
 
-FILE *file;
-int commands_stored = 0, file_mode = 1; // file_mode = {0: read from file, 1: write to file}
+int commands_stored = 0;
 char **last_ten_commands;
+typedef struct
+{
+	int file_mode;
+	FILE *file_stream;
+} redir_file;
 
 void run_shell();
 void handle_signal(int);
 void handle_sigint();
 void handle_sigquit();
 char *read_command();
-void add_command(char *);
-void parse_and_execute();
+void add_command(char *command);
+void parse_and_execute(char *user_command, redir_file rfiles);
 int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command);
 char **argument_extractor(char *command);
-FILE *file_redirector(char *user_command);
+redir_file file_redirector(char *user_command);
 
 int main()
 {
@@ -48,9 +55,9 @@ void run_shell()
 		 * store and return pointer to location
 		 * */
 		user_command = read_command();
-		
+
 		// Set file pointer to handle redirection
-		file = file_redirector(user_command);
+		redir_file rfiles = file_redirector(user_command);
 
 		/*
 		 * parse user_command 
@@ -59,7 +66,7 @@ void run_shell()
 		 * execute all
 		 * 
 		 */
-		parse_and_execute(user_command);
+		parse_and_execute(user_command, rfiles);
 	}
 }
 
@@ -138,7 +145,7 @@ char *read_command()
 		}
 	}
 	user_command[index++] = '\0';
-	if (strlen(user_command) > 0)	//	Add a non-null command to history
+	if (strlen(user_command) > 0) //	Add a non-null command to history
 		add_command(user_command);
 
 	return user_command;
@@ -168,7 +175,7 @@ void add_command(char *command)
  * parse single line command into possibly multiple line bash equivalents
  * execute each one
 */
-void parse_and_execute(char *user_command)
+void parse_and_execute(char *user_command, redir_file rfile)
 {
 	char commands[10][3][BUFFER_SIZE];
 	for (size_t i = 0; i < 10; i++)
@@ -186,24 +193,26 @@ void parse_and_execute(char *user_command)
 
 	for (int i = 0; i < num_commands; i++)
 	{
-		//	Pipes established to and from child
-		int from_child[2];
-		int to_child[2];
-		pipe(from_child);
-		pipe(to_child);
 		strcpy(input, output);
+		if (i == 0 && rfile.file_mode == FILE_READ && rfile.file_stream != NULL)
+		{
+			fseek(rfile.file_stream, 0, SEEK_END);
+			size_t bytes_to_read = ftell(rfile.file_stream);
+			fseek(rfile.file_stream, 0, SEEK_SET);
+			fread(input, 1, bytes_to_read, rfile.file_stream);
+		}
 
 		for (int j = 0; j < 3 && strlen(commands[i][j]) != 0; j++)
 		{
 			char curr_command[BUFFER_SIZE];
 			strcpy(curr_command, commands[i][j]);
-
-			//	Argument vector for execv call
 			char **argv = argument_extractor(curr_command);
-			// for (size_t k = 0; argv[k] != NULL; k++)
-			// {
-				// printf("argument\t%ld\t%s\n", k, argv[k]);
-			// }
+
+			//	Pipes established to and from child
+			int from_child[2];
+			int to_child[2];
+			pipe(from_child);
+			pipe(to_child);
 
 			pid_t p = fork();
 			int status;
@@ -218,7 +227,7 @@ void parse_and_execute(char *user_command)
 				close(to_child[PIPE_WRITE]);
 				close(from_child[PIPE_READ]);
 				dup2(from_child[PIPE_WRITE], STDOUT_FILENO); //stdout to string to parent process
-				dup2(to_child[PIPE_READ], STDIN_FILENO);		//stdin of string from parent process
+				dup2(to_child[PIPE_READ], STDIN_FILENO);		 //stdin of string from parent process
 				close(from_child[PIPE_WRITE]);
 				close(to_child[PIPE_READ]);
 
@@ -231,17 +240,21 @@ void parse_and_execute(char *user_command)
 			default:
 				close(to_child[PIPE_READ]);
 				close(from_child[PIPE_WRITE]);
-				printf("\nProcess id:\t%d\t%s\n", p, argv[0]);
-				
-				write(to_child[PIPE_WRITE], input, strlen(input) + 1);
+				printf("\nProcess id:\t%d\n", p);
+
+				write(to_child[PIPE_WRITE], input, strlen(input));
 				close(to_child[PIPE_WRITE]);
-				printf("written to pipe:-----\n%s\n------\n", input);
+				// printf("written to pipe:-----\n%s\n------\n", input);
 				wait(&status);
-				
-				read(from_child[PIPE_READ], output, PIPE_SIZE);
+				size_t nbytes = read(from_child[PIPE_READ], output, PIPE_SIZE);
+				output[nbytes] = '\0';
 				break;
 			}
 
+			if (i == (num_commands - 1))
+			{
+				printf("%s\n", output);
+			}
 			// Deallocate the argument vector
 			for (int index = 0; argv[index] != NULL; index++)
 			{
@@ -251,7 +264,6 @@ void parse_and_execute(char *user_command)
 		}
 	}
 
-	printf("%s\n", output);
 	printf("command execution ended\n\n");
 }
 
@@ -322,43 +334,80 @@ char **argument_extractor(char *command)
 	return argv;
 }
 
-FILE *file_redirector(char *user_command)
+redir_file file_redirector(char *user_command)
 {
+	redir_file rfile;
+	rfile.file_mode = 0;
+	rfile.file_stream = stdout;
+
 	char *itr = user_command, redirect_sign, *temp;
 	while (*itr != '\0')
 	{
-		if (*itr == '<' || *itr == '>')
+		if (*itr == '<')
 		{
-			redirect_sign = *itr;
-			temp = itr;
-			*itr++ = '\0';
-			while (*itr == ' ')
-				itr++;
+			*itr = '\0';
+			while (*++itr == ' ')
+				;
 
-			switch (redirect_sign)
+			rfile.file_mode = FILE_READ;
+			rfile.file_stream = fopen(itr, "r");
+			break;
+		}
+		else if (*itr == '>')
+		{
+			*itr = '\0';
+			if (*(itr + 1) == '>')
 			{
-			case '<':
-				file_mode = 0;
-				printf("file opened for reading:\t%s\n", itr);
-				file = fopen(itr, "r");
-				break;
+				itr++;
+				while (*++itr == ' ')
+					;
 
-			case '>':
-				file_mode = 1;
-				printf("file opened for writing:\t%s\n", itr);
-				file = fopen(itr, "w+");
-				*temp = redirect_sign;
-				return file;
-				break;
-
-			default:
+				rfile.file_mode = FILE_APPEND;
+				rfile.file_stream = fopen(itr, "a");
 				break;
 			}
-			printf("Main command:\t%s", user_command);
+
+			while (*++itr == ' ')
+				;
+
+			rfile.file_mode = FILE_WRITE;
+			rfile.file_stream = fopen(itr, "w");
 			break;
 		}
 		itr++;
 	}
+	// 	if (*itr == '<' || *itr == '>')
+	// 	{
+	// 		redirect_sign = *itr;
+	// 		temp = itr;
+	// 		*itr++ = '\0';
+	// 		while (*itr == ' ')
+	// 			itr++;
 
-	return stdout;
+	// 		switch (redirect_sign)
+	// 		{
+	// 		case '<':
+	// 			// file_mode = 0;
+	// 			printf("file opened for reading:\t%s\n", itr);
+	// 			// file = fopen(itr, "r");
+	// 			break;
+
+	// 		case '>':
+	// 			// file_mode = 1;
+	// 			printf("file opened for writing:\t%s\n", itr);
+	// 			// file = fopen(itr, "w+");
+	// 			*temp = redirect_sign;
+	// 			// return file;
+	// 			break;
+
+	// 		default:
+	// 			break;
+	// 		}
+	// 		printf("Main command:\t%s", user_command);
+	// 		break;
+	// 	}
+	// 	itr++;
+	// }
+
+	return rfile;
 }
