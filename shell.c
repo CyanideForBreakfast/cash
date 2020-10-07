@@ -222,21 +222,6 @@ void parse_and_execute(char *user_command)
 				close(from_child[PIPE_WRITE]);
 				close(to_child[PIPE_READ]);
 
-				// sleep(2);
-				// char str[PIPE_SIZE];
-				// printf("child\n");
-				// read(to_child[PIPE_READ], str, 1000000);
-				// scanf("%s", str);
-				// printf("%s\n", str);
-				// wait(NULL);
-				// int a = 0;
-				// char ch;
-				// while ((ch = getchar()) != '\0')
-					// str[a++] = ch;
-				
-				// perror(str);
-				// printf("reached\t%lu\n", strlen(str));
-
 				wait(NULL);
 				execvp(argv[0], argv);
 				perror("execv failed\n");
@@ -251,8 +236,8 @@ void parse_and_execute(char *user_command)
 				write(to_child[PIPE_WRITE], input, strlen(input) + 1);
 				close(to_child[PIPE_WRITE]);
 				printf("written to pipe:-----\n%s\n------\n", input);
-				// getchar();
 				wait(&status);
+				
 				read(from_child[PIPE_READ], output, PIPE_SIZE);
 				break;
 			}
