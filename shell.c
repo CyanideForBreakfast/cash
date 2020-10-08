@@ -285,7 +285,6 @@ void parse_and_execute(char *user_command, redir_file rfile)
 
 				write(to_child[PIPE_WRITE], input, strlen(input));
 				close(to_child[PIPE_WRITE]);
-
 				waitpid(p, &status, 0);
 				size_t nbytes = read(from_child[PIPE_READ], output, PIPE_SIZE);
 				output[nbytes] = '\0';
@@ -296,7 +295,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				printf("from_child:\t%d\t%d\n", from_child[PIPE_READ], from_child[PIPE_WRITE]);
 				if (WIFEXITED(status))
 				{
-					printf("Command %s\tterminated;\nexit status:\t%d", commands[i][j], WEXITSTATUS(status));
+					printf("Command %s\tterminated;\nexit status:\t%d\n", commands[i][j], WEXITSTATUS(status));
 					add_exit_status(WEXITSTATUS(status));
 				}
 				break;
