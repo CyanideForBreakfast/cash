@@ -244,9 +244,13 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				close(from_child[PIPE_WRITE]);
 				close(to_child[PIPE_READ]);
 
-				// printf("%s\n", argv[0]);
-				char *path = path_to_executable(argv[0]);
-				if (path == NULL)
+				char *path;
+				if (strchr(argv[0], '/') == NULL)
+					path = path_to_executable(argv[0]);
+				else
+					path = argv[0];
+
+				if (path == NULL || access(path, X_OK) != 0)
 				{
 					perror("Executable not found");
 					exit(1);
