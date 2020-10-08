@@ -88,7 +88,9 @@ void handle_sigint()
 	for (int i = 0; i < commands_stored; i++)
 	{
 		printf("%s\n", last_ten_commands[i]);
+		free(last_ten_commands[i]);
 	}
+	free(last_ten_commands);
 	raise(SIGKILL);
 }
 
@@ -114,6 +116,7 @@ void run_shell()
 		 * 
 		 */
 		parse_and_execute(user_command, rfile);
+		free(user_command);
 		if (rfile.file_stream != NULL)
 		{
 			fclose(rfile.file_stream);
@@ -161,9 +164,11 @@ char *read_command()
 // add commands to last ten commands
 void add_command(char *command)
 {
+	char *command_record = (char *)malloc((strlen(command) + 1) * sizeof(char));
+	strcpy(command_record, command);
 	if (commands_stored < 10)
 	{
-		last_ten_commands[commands_stored] = command;
+		last_ten_commands[commands_stored] = command_record;
 		commands_stored++;
 	}
 	else
@@ -174,7 +179,7 @@ void add_command(char *command)
 		{
 			last_ten_commands[i] = last_ten_commands[i + 1];
 		}
-		last_ten_commands[9] = command;
+		last_ten_commands[9] = command_record;
 	}
 }
 
@@ -364,6 +369,10 @@ char **argument_extractor(char *command)
 	return argv;
 }
 
+/* 
+ * Finds full path to the executable file in PATH directories,
+ * returns NULL if not found.
+ */
 char *path_to_executable(char *argv_0)
 {
 	char *path_list = getenv("PATH"), *exe_path = (char *)calloc(PATH_SIZE, sizeof(char));
