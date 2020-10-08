@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 
 #define BUFFER_SIZE 100
+#define PATH_SIZE 256
 #define PIPE_SIZE 1000000
 #define PIPE_READ 0
 #define PIPE_WRITE 1
@@ -31,6 +32,7 @@ void add_command(char *command);
 void parse_and_execute(char *user_command, redir_file rfiles);
 int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command);
 char **argument_extractor(char *command);
+char *path_to_executable(char *agrv_0);
 redir_file file_redirector(char *user_command);
 
 int main()
@@ -73,7 +75,10 @@ void handle_sigquit()
 		c = getchar();
 	}
 	if (c == 'n')
+	{
+		// fputc('\n', stdin);
 		return;
+	}
 	raise(SIGKILL);
 }
 
@@ -109,7 +114,10 @@ void run_shell()
 		 * 
 		 */
 		parse_and_execute(user_command, rfile);
-		fclose(rfile.file_stream);
+		if (rfile.file_stream != NULL)
+		{
+			fclose(rfile.file_stream);
+		}
 	}
 }
 /*
@@ -199,7 +207,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 			fseek(rfile.file_stream, 0, SEEK_END);
 			size_t bytes_to_read = ftell(rfile.file_stream);
 			fseek(rfile.file_stream, 0, SEEK_SET);
-			fread(input, 1, bytes_to_read, rfile.file_stream);
+			fread(input, sizeof(char), bytes_to_read, rfile.file_stream);
 		}
 
 		for (int j = 0; j < 3 && strlen(commands[i][j]) != 0; j++)
@@ -231,9 +239,17 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				close(from_child[PIPE_WRITE]);
 				close(to_child[PIPE_READ]);
 
+				// printf("%s\n", argv[0]);
+				char *path = path_to_executable(argv[0]);
+				if (path == NULL)
+				{
+					perror("Executable not found");
+					exit(1);
+				}
+
 				wait(NULL);
-				execvp(argv[0], argv);
-				perror("execv failed\n");
+				execv(path, argv);
+				perror("execv failed");
 				exit(1);
 				break;
 
@@ -251,6 +267,10 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				break;
 			}
 
+			/*
+			 * Final output of the command, if multiple commands
+			 * on the final pipe, multiple outputs to stdout or redirected file.
+			 */
 			if (i == (num_commands - 1))
 			{
 				if (rfile.file_mode == FILE_READ)
@@ -259,7 +279,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				}
 				else
 				{
-					fwrite(output, 1, strlen(output), rfile.file_stream);
+					fwrite(output, sizeof(char), strlen(output), rfile.file_stream);
 				}
 			}
 
@@ -272,6 +292,8 @@ void parse_and_execute(char *user_command, redir_file rfile)
 		}
 	}
 
+	free(input);
+	free(output);
 	printf("command execution ended\n");
 }
 
@@ -342,6 +364,26 @@ char **argument_extractor(char *command)
 	return argv;
 }
 
+char *path_to_executable(char *argv_0)
+{
+	char *path_list = getenv("PATH"), *exe_path = (char *)calloc(PATH_SIZE, sizeof(char));
+	for (char *path_token = strtok(path_list, ":"); path_token != NULL; path_token = strtok(NULL, ":"))
+	{
+		strcat(exe_path, path_token);
+		strcat(exe_path, "/");
+		strcat(exe_path, argv_0);
+
+		if (access(exe_path, X_OK) == 0)
+		{
+			return exe_path;
+		}
+		exe_path = (char *)memset(exe_path, '\0', PATH_SIZE);
+	}
+
+	free(exe_path);
+	return NULL;
+}
+
 /* 
  * Extract the file name from user_command
  * and determine read or write mode for
@@ -350,10 +392,10 @@ char **argument_extractor(char *command)
 redir_file file_redirector(char *user_command)
 {
 	redir_file rfile;
-	rfile.file_mode = 0;
+	rfile.file_mode = FILE_READ;
 	rfile.file_stream = NULL;
 
-	char *itr = user_command, redirect_sign, *temp;
+	char *itr = user_command;
 	while (*itr != '\0')
 	{
 		if (*itr == '<')
@@ -364,20 +406,22 @@ redir_file file_redirector(char *user_command)
 
 			rfile.file_mode = FILE_READ;
 			rfile.file_stream = fopen(itr, "r");
-			break;
+			return rfile;
 		}
 		else if (*itr == '>')
 		{
 			*itr = '\0';
 			if (*(itr + 1) == '>')
 			{
+				printf("file opened for appending\n");
 				itr++;
 				while (*++itr == ' ')
 					;
 
+				printf("%s\n", itr);
 				rfile.file_mode = FILE_APPEND;
 				rfile.file_stream = fopen(itr, "a");
-				break;
+				return rfile;
 			}
 
 			while (*++itr == ' ')
@@ -385,7 +429,7 @@ redir_file file_redirector(char *user_command)
 
 			rfile.file_mode = FILE_WRITE;
 			rfile.file_stream = fopen(itr, "w");
-			break;
+			return rfile;
 		}
 		itr++;
 	}
