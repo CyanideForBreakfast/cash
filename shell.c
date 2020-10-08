@@ -3,21 +3,22 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
 #define BUFFER_SIZE 100
 #define PATH_SIZE 256
-#define PIPE_SIZE 1000000
+#define PIPE_SIZE INT_MAX
 #define PIPE_READ 0
 #define PIPE_WRITE 1
 #define FILE_WRITE 0
 #define FILE_APPEND 1
 #define FILE_READ -1
 
-int commands_stored = 0;
+int commands_stored = 0, exit_status[10];
 char **last_ten_commands;
-typedef struct
+typedef struct redir_file
 {
 	int file_mode;
 	FILE *file_stream;
@@ -29,7 +30,7 @@ void handle_sigint();
 void handle_sigquit();
 char *read_command();
 void add_command(char *command);
-void parse_and_execute(char *user_command, redir_file rfiles);
+void parse_and_execute(char *user_command, redir_file rfile);
 int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command);
 char **argument_extractor(char *command);
 char *path_to_executable(char *agrv_0);
@@ -84,10 +85,10 @@ void handle_sigquit()
 
 void handle_sigint()
 {
-	printf("\n");
+	printf("\nExit status\tCommand\n\n");
 	for (int i = 0; i < commands_stored; i++)
 	{
-		printf("%s\n", last_ten_commands[i]);
+		printf("%d\t\t%s\n", exit_status[i], last_ten_commands[i]);
 		free(last_ten_commands[i]);
 	}
 	free(last_ten_commands);
@@ -183,6 +184,22 @@ void add_command(char *command)
 	}
 }
 
+void add_exit_status(int status)
+{
+	if (commands_stored < 10)
+	{
+		exit_status[commands_stored - 1] = status;
+	}
+	else
+	{
+		for (int i = 0; i < 9; i++)
+		{
+			exit_status[i] = exit_status[i + 1];
+		}
+		exit_status[9] = status;
+	}
+}
+
 /*
  * parse single line command into possibly
  * multiple line bash equivalents
@@ -253,7 +270,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 				if (path == NULL || access(path, X_OK) != 0)
 				{
 					perror("Executable not found");
-					exit(1);
+					exit(126);
 				}
 
 				wait(NULL);
@@ -265,14 +282,23 @@ void parse_and_execute(char *user_command, redir_file rfile)
 			default:
 				close(to_child[PIPE_READ]);
 				close(from_child[PIPE_WRITE]);
-				printf("Process id:\t%d\n", p);
 
 				write(to_child[PIPE_WRITE], input, strlen(input));
 				close(to_child[PIPE_WRITE]);
-				// printf("written to pipe:-----\n%s\n------\n", input);
-				wait(&status);
+
+				waitpid(p, &status, 0);
 				size_t nbytes = read(from_child[PIPE_READ], output, PIPE_SIZE);
 				output[nbytes] = '\0';
+
+				printf("\nProcess id:\t%d\n", p);
+				printf("Pipe FDs for\t%s:\n\t\tR\tW\n", commands[i][j]);
+				printf("to_child:\t%d\t%d\n", to_child[PIPE_READ], to_child[PIPE_WRITE]);
+				printf("from_child:\t%d\t%d\n", from_child[PIPE_READ], from_child[PIPE_WRITE]);
+				if (WIFEXITED(status))
+				{
+					printf("Command %s\tterminated;\nexit status:\t%d", commands[i][j], WEXITSTATUS(status));
+					add_exit_status(WEXITSTATUS(status));
+				}
 				break;
 			}
 
@@ -284,7 +310,7 @@ void parse_and_execute(char *user_command, redir_file rfile)
 			{
 				if (rfile.file_mode == FILE_READ)
 				{
-					printf("%s\n", output);
+					printf("\nCommand output:\n%s\n", output);
 				}
 				else
 				{
@@ -299,11 +325,11 @@ void parse_and_execute(char *user_command, redir_file rfile)
 			}
 			free(argv);
 		}
+		printf("----------------------------\n");
 	}
 
 	free(input);
 	free(output);
-	printf("command execution ended\n");
 }
 
 int command_extractor(char commands[][3][BUFFER_SIZE], char *user_command)
@@ -358,12 +384,23 @@ char **argument_extractor(char *command)
 	int k = 0;
 	char *arg_token = strtok(command, " ");
 	char **argv = NULL;
+
 	while (arg_token != NULL)
 	{
 		argv = (char **)realloc(argv, (k + 1) * sizeof(char *));
 		argv[k] = (char *)malloc(BUFFER_SIZE * sizeof(char));
 
-		strcpy(argv[k], arg_token);
+		if (*arg_token == '"')
+		{
+			arg_token[strlen(arg_token)] = ' ';
+			arg_token = strtok(arg_token, "\"");
+			strcpy(argv[k], arg_token);
+		}
+		else
+		{
+			strcpy(argv[k], arg_token);
+		}
+
 		arg_token = strtok(NULL, " ");
 		k++;
 	}
